@@ -6,18 +6,6 @@ use bevy::{
     window::{WindowMode, WindowTheme},
 };
 
-#[derive(Component)]
-enum Direction {
-    Right,
-    Left,
-}
-
-#[derive(Component)]
-struct Tile {
-    x: f32,
-    y: f32,
-}
-
 const GRID_COLUMNS: usize = 7;
 const GRID_ROWS: usize = 7;
 const BRICK_WIDTH: f32 = 80.0;
@@ -26,6 +14,7 @@ const HORIZONTAL_SPACING: f32 = 10.0;
 const VERTICAL_SPACING: f32 = 10.0;
 const PADDING_X: f32 = -270.0;
 const PADDING_Y: f32 = 270.0;
+const PLAYER_TILE_SPEED: f32 = 250.0;
 
 fn main() {
     App::new()
@@ -49,20 +38,27 @@ fn main() {
         .run();
 }
 
-fn move_player_tile(time: Res<Time>, mut sprite_position: Query<(&mut Direction, &mut Transform)>) {
-    for (mut logo, mut transform) in &mut sprite_position {
-        match *logo {
-            Direction::Right => transform.translation.x += 150. * time.delta_seconds(),
-            Direction::Left => transform.translation.x -= 150. * time.delta_seconds(),
+fn move_player_tile(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut sprite_position: Query<&mut Transform, With<Player>>,
+) {
+    for mut transform in sprite_position.iter_mut() {
+        let mut direction = Vec3::ZERO;
+
+        if keyboard_input.pressed(KeyCode::ArrowLeft) {
+            direction.x -= 1.0;
+        }
+        if keyboard_input.pressed(KeyCode::ArrowRight) {
+            direction.x += 1.0;
         }
 
-        if transform.translation.x > 200. {
-            *logo = Direction::Left;
-        } else if transform.translation.x < -200. {
-            *logo = Direction::Right;
-        }
+        transform.translation += time.delta_seconds() * PLAYER_TILE_SPEED * direction;
     }
 }
+
+#[derive(Component)]
+struct Player;
 
 fn setup(
     mut commands: Commands,
@@ -101,6 +97,6 @@ fn setup(
             transform: Transform::from_xyz(0.0, -PADDING_Y, 0.0),
             ..Default::default()
         },
-        Direction::Right,
+        Player,
     ));
 }
