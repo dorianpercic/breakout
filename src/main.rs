@@ -18,8 +18,9 @@ const PLAYER_TILE_SPEED: f32 = 250.0;
 const SCREEN_WIDTH: f32 = 600.0;
 const SCREEN_HEIGHT: f32 = 800.0;
 const BALL_RADIUS: f32 = 5.0;
-const PLAYER_SIZE: Vec2 = Vec2::new(BRICK_WIDTH, BRICK_HEIGHT); // width, height
-const BALL_SIZE: Vec2 = Vec2::new(BALL_RADIUS, BALL_RADIUS); // width, height
+const TILE_SIZE: Vec2 = Vec2::new(BRICK_WIDTH, BRICK_HEIGHT);
+const BALL_SIZE: Vec2 = Vec2::new(BALL_RADIUS, BALL_RADIUS);
+const BALL_VELOCITY: f32 = 220.0;
 
 #[derive(Component)]
 struct Player;
@@ -92,18 +93,35 @@ fn move_ball(
     let binding = param_set.p1();
     let player_transform = binding.single();
     let player_position = player_transform.translation;
+    let hit_tile_positions: Vec<Vec3> = param_set.p2().iter().map(|t| t.translation).collect();
 
-    for (mut transform, mut velocity) in param_set.p0().iter_mut() {
-        transform.translation += velocity.0 * time.delta_seconds() * 50.0;
+    for (mut transform_ball, mut velocity) in param_set.p0().iter_mut() {
+        transform_ball.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
+
+        // Check collision with player
         if check_collision(
-            transform.translation.truncate(),
-            PLAYER_SIZE,
+            transform_ball.translation.truncate(),
+            TILE_SIZE,
             player_position.truncate(),
             BALL_SIZE,
         ) {
             info!("Ball collided with player!");
-            velocity.0.y = 1.0; // Reverse vertical direction
-            transform.translation += velocity.0 * time.delta_seconds() * 50.0;
+            velocity.0.y = 1.0;
+            transform_ball.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
+        }
+
+        // Check collision with hit tiles
+        for hit_tile_position in &hit_tile_positions {
+            if check_collision(
+                transform_ball.translation.truncate(),
+                BALL_SIZE,
+                hit_tile_position.truncate(),
+                TILE_SIZE,
+            ) {
+                info!("Ball collided with tile!");
+                velocity.0.y = -1.0;
+                transform_ball.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
+            }
         }
     }
 }
