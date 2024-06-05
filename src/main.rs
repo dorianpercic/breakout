@@ -18,14 +18,20 @@ const PLAYER_TILE_SPEED: f32 = 250.0;
 const SCREEN_WIDTH: f32 = 600.0;
 const SCREEN_HEIGHT: f32 = 800.0;
 const BALL_RADIUS: f32 = 5.0;
-const PLAYER_SIZE: Vec2 = Vec2::new(50.0, 10.0); // width, height
-const BALL_SIZE: Vec2 = Vec2::new(10.0, 10.0); // width, height
+const PLAYER_SIZE: Vec2 = Vec2::new(BRICK_WIDTH, BRICK_HEIGHT); // width, height
+const BALL_SIZE: Vec2 = Vec2::new(BALL_RADIUS, BALL_RADIUS); // width, height
 
 #[derive(Component)]
 struct Player;
 
 #[derive(Component)]
 struct Ball;
+
+#[derive(Component)]
+struct HitTile;
+
+#[derive(Component)]
+struct Velocity(Vec3);
 
 fn main() {
     App::new()
@@ -78,18 +84,17 @@ fn move_player_tile(
 fn move_ball(
     time: Res<Time>,
     mut param_set: ParamSet<(
-        Query<&mut Transform, With<Ball>>,
+        Query<(&mut Transform, &mut Velocity), With<Ball>>,
         Query<&Transform, With<Player>>,
+        Query<&Transform, With<HitTile>>,
     )>,
 ) {
     let binding = param_set.p1();
     let player_transform = binding.single();
     let player_position = player_transform.translation;
 
-    for mut transform in param_set.p0().iter_mut() {
-        let mut direction = Vec3::new(0.0, -1.0, 0.0);
-
-        transform.translation += time.delta_seconds() * 50.0 * direction;
+    for (mut transform, mut velocity) in param_set.p0().iter_mut() {
+        transform.translation += velocity.0 * time.delta_seconds() * 50.0;
         if check_collision(
             transform.translation.truncate(),
             PLAYER_SIZE,
@@ -97,8 +102,8 @@ fn move_ball(
             BALL_SIZE,
         ) {
             info!("Ball collided with player!");
-            direction.y = 1.0;
-            transform.translation += time.delta_seconds() * 50.0 * direction;
+            velocity.0.y = 1.0; // Reverse vertical direction
+            transform.translation += velocity.0 * time.delta_seconds() * 50.0;
         }
     }
 }
@@ -142,12 +147,15 @@ fn setup(
         let x_position = PADDING_X + column as f32 * (BRICK_WIDTH + HORIZONTAL_SPACING);
         let y_position = PADDING_Y - row as f32 * (BRICK_HEIGHT + VERTICAL_SPACING);
 
-        commands.spawn(MaterialMesh2dBundle {
-            mesh: shape.into(),
-            material: materials.add(color),
-            transform: Transform::from_xyz(x_position, y_position, 0.0),
-            ..Default::default()
-        });
+        commands.spawn((
+            MaterialMesh2dBundle {
+                mesh: shape.into(),
+                material: materials.add(color),
+                transform: Transform::from_xyz(x_position, y_position, 0.0),
+                ..Default::default()
+            },
+            HitTile,
+        ));
     }
     commands.spawn((
         MaterialMesh2dBundle {
@@ -167,5 +175,6 @@ fn setup(
             ..Default::default()
         },
         Ball,
+        Velocity(Vec3::new(0.0, -1.0, 0.0)),
     ));
 }
