@@ -15,13 +15,15 @@ const VERTICAL_SPACING: f32 = 10.0;
 const PADDING_X: f32 = -270.0;
 const PADDING_Y: f32 = 270.0;
 const PLAYER_TILE_SPEED: f32 = 250.0;
+const SCREEN_WIDTH: f32 = 600.0;
+const SCREEN_HEIGHT: f32 = 800.0;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Breakout".into(),
-                resolution: (800.0, 600.0).into(),
+                resolution: (SCREEN_HEIGHT, SCREEN_WIDTH).into(),
                 mode: WindowMode::Windowed,
                 resizable: false,
                 window_theme: Some(WindowTheme::Dark),
@@ -52,8 +54,14 @@ fn move_player_tile(
         if keyboard_input.pressed(KeyCode::ArrowRight) {
             direction.x += 1.0;
         }
+        let move_translation =
+            transform.translation + (time.delta_seconds() * PLAYER_TILE_SPEED * direction);
 
-        transform.translation += time.delta_seconds() * PLAYER_TILE_SPEED * direction;
+        if move_translation.x < -SCREEN_WIDTH / 2.0 || move_translation.x > SCREEN_WIDTH / 2.0 {
+            info!("Player reached left/right boundary");
+            return;
+        }
+        transform.translation = move_translation;
     }
 }
 
