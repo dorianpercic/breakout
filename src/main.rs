@@ -14,10 +14,18 @@ const HORIZONTAL_SPACING: f32 = 10.0;
 const VERTICAL_SPACING: f32 = 10.0;
 const PADDING_X: f32 = -270.0;
 const PADDING_Y: f32 = 270.0;
-const PLAYER_TILE_SPEED: f32 = 150.0;
+const PLAYER_TILE_SPEED: f32 = 250.0;
 const SCREEN_WIDTH: f32 = 600.0;
 const SCREEN_HEIGHT: f32 = 800.0;
 const BALL_RADIUS: f32 = 5.0;
+const PLAYER_SIZE: Vec2 = Vec2::new(50.0, 10.0); // width, height
+const BALL_SIZE: Vec2 = Vec2::new(10.0, 10.0); // width, height
+
+#[derive(Component)]
+struct Player;
+
+#[derive(Component)]
+struct Ball;
 
 fn main() {
     App::new()
@@ -38,16 +46,16 @@ fn main() {
         }))
         .add_systems(Startup, setup)
         .add_systems(Update, move_player_tile)
-        //.add_systems(Update, move_ball)
+        .add_systems(Update, move_ball)
         .run();
 }
 
 fn move_player_tile(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut sprite_position: Query<&mut Transform, With<Player>>,
+    mut player_query: Query<&mut Transform, With<Player>>,
 ) {
-    for mut transform in sprite_position.iter_mut() {
+    for mut transform in player_query.iter_mut() {
         let mut direction = Vec3::ZERO;
 
         if keyboard_input.pressed(KeyCode::ArrowLeft) {
@@ -64,23 +72,49 @@ fn move_player_tile(
             return;
         }
         transform.translation = move_translation;
-
-        if keyboard_input.pressed(KeyCode::ArrowLeft) {
-            direction.x -= 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowRight) {
-            direction.x += 1.0;
-        }
-
-        transform.translation += time.delta_seconds() * PLAYER_TILE_SPEED * direction;
     }
 }
 
-#[derive(Component)]
-struct Player;
+fn move_ball(
+    time: Res<Time>,
+    mut param_set: ParamSet<(
+        Query<&mut Transform, With<Ball>>,
+        Query<&Transform, With<Player>>,
+    )>,
+) {
+    let binding = param_set.p1();
+    let player_transform = binding.single();
+    let player_position = player_transform.translation;
 
-#[derive(Component)]
-struct Ball;
+    for mut transform in param_set.p0().iter_mut() {
+        let mut direction = Vec3::new(0.0, -1.0, 0.0);
+
+        transform.translation += time.delta_seconds() * 50.0 * direction;
+        if check_collision(
+            transform.translation.truncate(),
+            PLAYER_SIZE,
+            player_position.truncate(),
+            BALL_SIZE,
+        ) {
+            info!("Ball collided with player!");
+            direction.y = 1.0;
+            transform.translation += time.delta_seconds() * 50.0 * direction;
+        }
+    }
+}
+
+fn check_collision(pos1: Vec2, size1: Vec2, pos2: Vec2, size2: Vec2) -> bool {
+    let half_size1 = size1 / 2.0;
+    let half_size2 = size2 / 2.0;
+
+    let min1 = pos1 - half_size1;
+    let max1 = pos1 + half_size1;
+
+    let min2 = pos2 - half_size2;
+    let max2 = pos2 + half_size2;
+
+    min1.x < max2.x && max1.x > min2.x && min1.y < max2.y && max1.y > min2.y
+}
 
 fn setup(
     mut commands: Commands,
