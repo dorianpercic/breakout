@@ -62,6 +62,16 @@ fn move_player_tile(
             return;
         }
         transform.translation = move_translation;
+
+
+        if keyboard_input.pressed(KeyCode::ArrowLeft) {
+            direction.x -= 1.0;
+        }
+        if keyboard_input.pressed(KeyCode::ArrowRight) {
+            direction.x += 1.0;
+        }
+
+        transform.translation += time.delta_seconds() * PLAYER_TILE_SPEED * direction;
     }
 }
 
