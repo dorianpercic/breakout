@@ -1,5 +1,3 @@
-//! Shows how to render simple primitive shapes with a single color.
-
 use bevy::{
     prelude::*,
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
@@ -19,7 +17,7 @@ const SCREEN_WIDTH: f32 = 600.0;
 const SCREEN_HEIGHT: f32 = 800.0;
 const BALL_RADIUS: f32 = 5.0;
 const TILE_SIZE: Vec2 = Vec2::new(BRICK_WIDTH, BRICK_HEIGHT);
-const BALL_SIZE: Vec2 = Vec2::new(BALL_RADIUS, BALL_RADIUS);
+const BALL_SIZE: Vec2 = Vec2::new(BALL_RADIUS * 2.0, BALL_RADIUS * 2.0);
 const BALL_VELOCITY: f32 = 220.0;
 
 #[derive(Component)]
@@ -52,91 +50,10 @@ fn main() {
             ..WindowPlugin::default()
         }))
         .add_systems(Startup, setup)
-        .add_systems(Update, move_player_tile)
+        .add_systems(Update, move_player)
         .add_systems(Update, move_ball)
+        .add_systems(Update, handle_collisions)
         .run();
-}
-
-fn move_player_tile(
-    time: Res<Time>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player_query: Query<&mut Transform, With<Player>>,
-) {
-    for mut transform in player_query.iter_mut() {
-        let mut direction = Vec3::ZERO;
-
-        if keyboard_input.pressed(KeyCode::ArrowLeft) {
-            direction.x -= 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowRight) {
-            direction.x += 1.0;
-        }
-        let move_translation =
-            transform.translation + (time.delta_seconds() * PLAYER_TILE_SPEED * direction);
-
-        if move_translation.x < -SCREEN_WIDTH / 2.0 || move_translation.x > SCREEN_WIDTH / 2.0 {
-            info!("Player reached left/right boundary");
-            return;
-        }
-        transform.translation = move_translation;
-    }
-}
-
-fn move_ball(
-    time: Res<Time>,
-    mut param_set: ParamSet<(
-        Query<(&mut Transform, &mut Velocity), With<Ball>>,
-        Query<&Transform, With<Player>>,
-        Query<&Transform, With<HitTile>>,
-    )>,
-) {
-    let binding = param_set.p1();
-    let player_transform = binding.single();
-    let player_position = player_transform.translation;
-    let hit_tile_positions: Vec<Vec3> = param_set.p2().iter().map(|t| t.translation).collect();
-
-    for (mut transform_ball, mut velocity) in param_set.p0().iter_mut() {
-        transform_ball.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
-
-        // Check collision with player
-        if check_collision(
-            transform_ball.translation.truncate(),
-            TILE_SIZE,
-            player_position.truncate(),
-            BALL_SIZE,
-        ) {
-            info!("Ball collided with player!");
-            velocity.0.y = 1.0;
-            transform_ball.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
-        }
-
-        // Check collision with hit tiles
-        for hit_tile_position in &hit_tile_positions {
-            if check_collision(
-                transform_ball.translation.truncate(),
-                BALL_SIZE,
-                hit_tile_position.truncate(),
-                TILE_SIZE,
-            ) {
-                info!("Ball collided with tile!");
-                velocity.0.y = -1.0;
-                transform_ball.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
-            }
-        }
-    }
-}
-
-fn check_collision(pos1: Vec2, size1: Vec2, pos2: Vec2, size2: Vec2) -> bool {
-    let half_size1 = size1 / 2.0;
-    let half_size2 = size2 / 2.0;
-
-    let min1 = pos1 - half_size1;
-    let max1 = pos1 + half_size1;
-
-    let min2 = pos2 - half_size2;
-    let max2 = pos2 + half_size2;
-
-    min1.x < max2.x && max1.x > min2.x && min1.y < max2.y && max1.y > min2.y
 }
 
 fn setup(
@@ -146,16 +63,20 @@ fn setup(
 ) {
     commands.spawn(Camera2dBundle::default());
 
-    let hit_tiles: [Mesh2dHandle; 49] = core::array::from_fn(|_| {
-        Mesh2dHandle(meshes.add(Rectangle::new(BRICK_WIDTH, BRICK_HEIGHT)))
+    spawn_hit_tiles(&mut commands, &mut meshes, &mut materials);
+    spawn_player(&mut commands, &mut meshes, &mut materials);
+    spawn_ball(&mut commands, &mut meshes, &mut materials);
+}
+
+fn spawn_hit_tiles(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    let hit_tiles: [Mesh2dHandle; GRID_COLUMNS * GRID_ROWS] = core::array::from_fn(|_| {
+        Mesh2dHandle(meshes.add(Mesh::from(Rectangle::new(BRICK_WIDTH, BRICK_HEIGHT))))
     });
 
-    let player_tile: Mesh2dHandle =
-        Mesh2dHandle(meshes.add(Rectangle::new(BRICK_WIDTH, BRICK_HEIGHT)));
-
-    let ball: Mesh2dHandle = Mesh2dHandle(meshes.add(Circle::new(BALL_RADIUS)));
-
-    // Add the hit tiles to the scene
     for (i, shape) in hit_tiles.into_iter().enumerate() {
         let color = Color::hsl(360., 0.95, 0.7);
 
@@ -175,6 +96,16 @@ fn setup(
             HitTile,
         ));
     }
+}
+
+fn spawn_player(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    let player_tile: Mesh2dHandle =
+        Mesh2dHandle(meshes.add(Mesh::from(Rectangle::new(BRICK_WIDTH, BRICK_HEIGHT))));
+
     commands.spawn((
         MaterialMesh2dBundle {
             mesh: player_tile.into(),
@@ -184,6 +115,14 @@ fn setup(
         },
         Player,
     ));
+}
+
+fn spawn_ball(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    let ball: Mesh2dHandle = Mesh2dHandle(meshes.add(Mesh::from(Circle::new(BALL_RADIUS))));
 
     commands.spawn((
         MaterialMesh2dBundle {
@@ -195,4 +134,88 @@ fn setup(
         Ball,
         Velocity(Vec3::new(0.0, -1.0, 0.0)),
     ));
+}
+
+fn move_player(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut player_query: Query<&mut Transform, With<Player>>,
+) {
+    for mut transform in player_query.iter_mut() {
+        let mut direction = Vec3::ZERO;
+
+        if keyboard_input.pressed(KeyCode::ArrowLeft) {
+            direction.x -= 1.0;
+        }
+        if keyboard_input.pressed(KeyCode::ArrowRight) {
+            direction.x += 1.0;
+        }
+
+        let move_translation =
+            transform.translation + (time.delta_seconds() * PLAYER_TILE_SPEED * direction);
+
+        if move_translation.x < -SCREEN_WIDTH / 2.0 || move_translation.x > SCREEN_WIDTH / 2.0 {
+            info!("Player reached left/right boundary");
+            return;
+        }
+        transform.translation = move_translation;
+    }
+}
+
+fn move_ball(time: Res<Time>, mut ball_query: Query<(&mut Transform, &mut Velocity), With<Ball>>) {
+    for (mut transform, velocity) in ball_query.iter_mut() {
+        transform.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
+    }
+}
+
+fn handle_collisions(
+    mut param_set: ParamSet<(
+        Query<(&mut Transform, &mut Velocity), With<Ball>>,
+        Query<&Transform, With<Player>>,
+        Query<&Transform, With<HitTile>>,
+    )>,
+) {
+    let player_transform = param_set.p1();
+    let player_position = player_transform.single().translation;
+    let hit_tile_positions: Vec<Vec3> = param_set.p2().iter().map(|t| t.translation).collect();
+
+    for (transform, mut velocity) in param_set.p0().iter_mut() {
+        // Check collision with player
+        if check_collision(
+            transform.translation.truncate(),
+            BALL_SIZE,
+            player_position.truncate(),
+            TILE_SIZE,
+        ) {
+            info!("Ball collided with player!");
+            velocity.0.y = 1.0;
+        }
+
+        // Check collision with hit tiles
+        for hit_tile_position in &hit_tile_positions {
+            if check_collision(
+                transform.translation.truncate(),
+                BALL_SIZE,
+                hit_tile_position.truncate(),
+                TILE_SIZE,
+            ) {
+                info!("Ball collided with tile!");
+                velocity.0.y = -1.0;
+                break; // Handle one collision per frame for simplicity
+            }
+        }
+    }
+}
+
+fn check_collision(pos1: Vec2, size1: Vec2, pos2: Vec2, size2: Vec2) -> bool {
+    let half_size1 = size1 / 2.0;
+    let half_size2 = size2 / 2.0;
+
+    let min1 = pos1 - half_size1;
+    let max1 = pos1 + half_size1;
+
+    let min2 = pos2 - half_size2;
+    let max2 = pos2 + half_size2;
+
+    min1.x < max2.x && max1.x > min2.x && min1.y < max2.y && max1.y > min2.y
 }
