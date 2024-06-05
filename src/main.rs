@@ -14,7 +14,7 @@ const HORIZONTAL_SPACING: f32 = 10.0;
 const VERTICAL_SPACING: f32 = 10.0;
 const PADDING_X: f32 = -270.0;
 const PADDING_Y: f32 = 270.0;
-const PLAYER_TILE_SPEED: f32 = 250.0;
+const PLAYER_TILE_SPEED: f32 = 150.0;
 const SCREEN_WIDTH: f32 = 600.0;
 const SCREEN_HEIGHT: f32 = 800.0;
 
@@ -62,7 +62,6 @@ fn move_player_tile(
             return;
         }
         transform.translation = move_translation;
-
 
         if keyboard_input.pressed(KeyCode::ArrowLeft) {
             direction.x -= 1.0;
