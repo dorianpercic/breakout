@@ -17,6 +17,7 @@ const PADDING_Y: f32 = 270.0;
 const PLAYER_TILE_SPEED: f32 = 150.0;
 const SCREEN_WIDTH: f32 = 600.0;
 const SCREEN_HEIGHT: f32 = 800.0;
+const BALL_RADIUS: f32 = 5.0;
 
 fn main() {
     App::new()
@@ -37,6 +38,7 @@ fn main() {
         }))
         .add_systems(Startup, setup)
         .add_systems(Update, move_player_tile)
+        //.add_systems(Update, move_ball)
         .run();
 }
 
@@ -77,6 +79,9 @@ fn move_player_tile(
 #[derive(Component)]
 struct Player;
 
+#[derive(Component)]
+struct Ball;
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -87,8 +92,11 @@ fn setup(
     let hit_tiles: [Mesh2dHandle; 49] = core::array::from_fn(|_| {
         Mesh2dHandle(meshes.add(Rectangle::new(BRICK_WIDTH, BRICK_HEIGHT)))
     });
+
     let player_tile: Mesh2dHandle =
         Mesh2dHandle(meshes.add(Rectangle::new(BRICK_WIDTH, BRICK_HEIGHT)));
+
+    let ball: Mesh2dHandle = Mesh2dHandle(meshes.add(Circle::new(BALL_RADIUS)));
 
     // Add the hit tiles to the scene
     for (i, shape) in hit_tiles.into_iter().enumerate() {
@@ -115,5 +123,15 @@ fn setup(
             ..Default::default()
         },
         Player,
+    ));
+
+    commands.spawn((
+        MaterialMesh2dBundle {
+            mesh: ball.into(),
+            material: materials.add(Color::hsl(180., 0.7, 0.75)),
+            transform: Transform::from_xyz(0.0, -150.0, 0.0),
+            ..Default::default()
+        },
+        Ball,
     ));
 }
