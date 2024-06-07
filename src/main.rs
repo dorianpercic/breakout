@@ -1,4 +1,5 @@
 use bevy::{
+    ecs::event::Event,
     prelude::*,
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
     window::{WindowMode, WindowTheme},
@@ -21,6 +22,7 @@ const BALL_SIZE: Vec2 = Vec2::new(BALL_RADIUS * 2.0, BALL_RADIUS * 2.0);
 const BALL_VELOCITY: f32 = 220.0;
 const MAX_BOUNCE_ANGLE: f32 = 0.45;
 
+// Components
 #[derive(Component)]
 struct Player;
 
@@ -31,7 +33,22 @@ struct Ball;
 struct HitTile;
 
 #[derive(Component)]
-struct BallDirection(Vec3);
+struct MoveDirection(Vec3);
+
+// Events
+#[derive(Event)]
+struct WallHitEvent;
+
+#[derive(Event)]
+struct CeilingHitEvent;
+
+#[derive(Event)]
+struct PlayerHitEvent {
+    intersection_x: f32,
+}
+
+#[derive(Event)]
+struct TileHitEvent;
 
 fn main() {
     App::new()
@@ -50,10 +67,23 @@ fn main() {
             }),
             ..WindowPlugin::default()
         }))
+        .add_event::<WallHitEvent>()
+        .add_event::<CeilingHitEvent>()
+        .add_event::<PlayerHitEvent>()
+        .add_event::<TileHitEvent>()
         .add_systems(Startup, setup)
-        .add_systems(Update, move_player)
-        .add_systems(Update, move_ball)
-        .add_systems(Update, handle_collisions)
+        .add_systems(
+            Update,
+            (
+                move_player,
+                move_ball,
+                handle_collisions,
+                handle_wall_hit_events,
+                handle_ceiling_hit_events,
+                handle_player_hit_events,
+                handle_tile_hit_events,
+            ),
+        )
         .run();
 }
 
@@ -133,7 +163,7 @@ fn spawn_ball(
             ..Default::default()
         },
         Ball,
-        BallDirection(Vec3::new(0.0, -1.0, 0.0)),
+        MoveDirection(Vec3::new(0.0, -1.0, 0.0)),
     ));
 }
 
@@ -155,7 +185,9 @@ fn move_player(
         let move_translation =
             transform.translation + (time.delta_seconds() * PLAYER_TILE_SPEED * direction);
 
-        if move_translation.x < -SCREEN_WIDTH / 2.0 || move_translation.x > SCREEN_WIDTH / 2.0 {
+        if move_translation.x < (-SCREEN_WIDTH / 2.0) - (BRICK_WIDTH / 1.5)
+            || move_translation.x > (SCREEN_WIDTH / 2.0) + (BRICK_WIDTH / 1.5)
+        {
             info!("Player reached left/right boundary");
             return;
         }
@@ -165,57 +197,133 @@ fn move_player(
 
 fn move_ball(
     time: Res<Time>,
-    mut ball_query: Query<(&mut Transform, &mut BallDirection), With<Ball>>,
+    mut ball_query: Query<(&mut Transform, &mut MoveDirection), With<Ball>>,
 ) {
-    for (mut transform, velocity) in ball_query.iter_mut() {
-        transform.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
+    for (mut ball_pos_transform, ball_direction) in ball_query.iter_mut() {
+        ball_pos_transform.translation += ball_direction.0 * time.delta_seconds() * BALL_VELOCITY;
     }
 }
 
 fn handle_collisions(
     mut param_set: ParamSet<(
-        Query<(&mut Transform, &mut BallDirection), With<Ball>>,
+        Query<&mut Transform, With<Ball>>,
         Query<&Transform, With<Player>>,
         Query<&Transform, With<HitTile>>,
     )>,
+    mut wall_hit_event_writer: EventWriter<WallHitEvent>,
+    mut ceiling_hit_event_writer: EventWriter<CeilingHitEvent>,
+    mut player_hit_event_writer: EventWriter<PlayerHitEvent>,
+    mut tile_hit_event_writer: EventWriter<TileHitEvent>,
 ) {
     let player_transform = param_set.p1();
     let player_position = player_transform.single().translation;
     let hit_tile_positions: Vec<Vec3> = param_set.p2().iter().map(|t| t.translation).collect();
 
-    for (transform, mut ball_direction) in param_set.p0().iter_mut() {
+    for mut ball_pos_transform in param_set.p0().iter_mut() {
+        if ball_pos_transform.translation.y >= SCREEN_HEIGHT / 2.6 {
+            ball_pos_transform.translation.y -= 2.0 * BALL_RADIUS;
+            ceiling_hit_event_writer.send(CeilingHitEvent);
+        }
+
+        if ball_pos_transform.translation.x <= -SCREEN_WIDTH / 1.53 {
+            ball_pos_transform.translation.x += 1.4 * BALL_RADIUS;
+            wall_hit_event_writer.send(WallHitEvent);
+        } else if ball_pos_transform.translation.x >= SCREEN_WIDTH / 1.53 {
+            ball_pos_transform.translation.x -= 1.4 * BALL_RADIUS;
+            wall_hit_event_writer.send(WallHitEvent);
+        }
+
         if check_collision(
-            transform.translation.truncate(),
+            ball_pos_transform.translation.truncate(),
             BALL_SIZE,
             player_position.truncate(),
             TILE_SIZE,
         ) {
-            // Move ball relative to hit intersection with player
-            let intersection_x = transform.translation.x;
+            let intersection_x = ball_pos_transform.translation.x;
             let player_left = player_position.x - TILE_SIZE.x / 2.0;
             let player_right = player_position.x + TILE_SIZE.x / 2.0;
 
             let normalized_intersection =
                 (intersection_x - player_left) / (player_right - player_left) * 2.0 - 1.0;
 
-            ball_direction.0.y = 1.0;
-            ball_direction.0.x = normalized_intersection * MAX_BOUNCE_ANGLE;
-
-            info!("Player x = {}", player_position.x.to_string());
-            info!("Ball x = {}", transform.translation.x.to_string());
+            player_hit_event_writer.send(PlayerHitEvent {
+                intersection_x: normalized_intersection,
+            });
         }
 
         for hit_tile_position in &hit_tile_positions {
             if check_collision(
-                transform.translation.truncate(),
+                ball_pos_transform.translation.truncate(),
                 BALL_SIZE,
                 hit_tile_position.truncate(),
                 TILE_SIZE,
             ) {
-                info!("Ball collided with tile!");
-                ball_direction.0.y = -1.0;
-                break;
+                tile_hit_event_writer.send(TileHitEvent);
             }
+        }
+    }
+}
+
+fn handle_player_hit_events(
+    mut player_hit_event_reader: EventReader<PlayerHitEvent>,
+    mut param_set: ParamSet<(
+        Query<&mut Transform, With<Ball>>,
+        Query<&mut MoveDirection, With<Ball>>,
+    )>,
+) {
+    for event in player_hit_event_reader.read() {
+        info!("Player collision");
+        for mut transform in param_set.p0().iter_mut() {
+            transform.translation.y -= -2.0 * BALL_RADIUS;
+        }
+        for mut move_direction in param_set.p1().iter_mut() {
+            move_direction.0.y *= -1.0;
+            move_direction.0.x += event.intersection_x * MAX_BOUNCE_ANGLE;
+        }
+    }
+}
+
+fn handle_wall_hit_events(
+    mut wall_hit_event_reader: EventReader<WallHitEvent>,
+    mut query: Query<&mut MoveDirection, With<Ball>>,
+) {
+    for _event in wall_hit_event_reader.read() {
+        info!("Wall collision");
+        for mut move_direction in query.iter_mut() {
+            move_direction.0.x *= -1.0;
+        }
+    }
+}
+
+fn handle_ceiling_hit_events(
+    mut ceiling_hit_event_reader: EventReader<CeilingHitEvent>,
+    mut param_set: ParamSet<(
+        Query<&mut Transform, With<Ball>>,
+        Query<&mut MoveDirection, With<Ball>>,
+    )>,
+) {
+    for _event in ceiling_hit_event_reader.read() {
+        info!("Ceiling collision");
+        for mut move_direction in param_set.p1().iter_mut() {
+            move_direction.0.y *= -1.0;
+        }
+    }
+}
+
+fn handle_tile_hit_events(
+    mut tile_hit_event_reader: EventReader<TileHitEvent>,
+    mut param_set: ParamSet<(
+        Query<&mut Transform, With<Ball>>,
+        Query<&mut MoveDirection, With<Ball>>,
+    )>,
+) {
+    for _event in tile_hit_event_reader.read() {
+        info!("Tile collision");
+        for mut transform in param_set.p0().iter_mut() {
+            transform.translation.y -= 2.0 * BALL_RADIUS;
+        }
+        for mut move_direction in param_set.p1().iter_mut() {
+            move_direction.0.y *= -1.0;
         }
     }
 }
