@@ -12,13 +12,14 @@ const HORIZONTAL_SPACING: f32 = 10.0;
 const VERTICAL_SPACING: f32 = 10.0;
 const PADDING_X: f32 = -270.0;
 const PADDING_Y: f32 = 270.0;
-const PLAYER_TILE_SPEED: f32 = 250.0;
+const PLAYER_TILE_SPEED: f32 = 550.0;
 const SCREEN_WIDTH: f32 = 600.0;
 const SCREEN_HEIGHT: f32 = 800.0;
 const BALL_RADIUS: f32 = 5.0;
 const TILE_SIZE: Vec2 = Vec2::new(BRICK_WIDTH, BRICK_HEIGHT);
 const BALL_SIZE: Vec2 = Vec2::new(BALL_RADIUS * 2.0, BALL_RADIUS * 2.0);
 const BALL_VELOCITY: f32 = 220.0;
+const MAX_BOUNCE_ANGLE: f32 = 0.45;
 
 #[derive(Component)]
 struct Player;
@@ -30,7 +31,7 @@ struct Ball;
 struct HitTile;
 
 #[derive(Component)]
-struct Velocity(Vec3);
+struct BallDirection(Vec3);
 
 fn main() {
     App::new()
@@ -128,11 +129,11 @@ fn spawn_ball(
         MaterialMesh2dBundle {
             mesh: ball.into(),
             material: materials.add(Color::hsl(180., 0.7, 0.75)),
-            transform: Transform::from_xyz(0.0, -150.0, 0.0),
+            transform: Transform::from_xyz(0.0, -50.0, 0.0),
             ..Default::default()
         },
         Ball,
-        Velocity(Vec3::new(0.0, -1.0, 0.0)),
+        BallDirection(Vec3::new(0.0, -1.0, 0.0)),
     ));
 }
 
@@ -145,10 +146,10 @@ fn move_player(
         let mut direction = Vec3::ZERO;
 
         if keyboard_input.pressed(KeyCode::ArrowLeft) {
-            direction.x -= 1.0;
+            direction.x -= 0.5;
         }
         if keyboard_input.pressed(KeyCode::ArrowRight) {
-            direction.x += 1.0;
+            direction.x += 0.5;
         }
 
         let move_translation =
@@ -162,7 +163,10 @@ fn move_player(
     }
 }
 
-fn move_ball(time: Res<Time>, mut ball_query: Query<(&mut Transform, &mut Velocity), With<Ball>>) {
+fn move_ball(
+    time: Res<Time>,
+    mut ball_query: Query<(&mut Transform, &mut BallDirection), With<Ball>>,
+) {
     for (mut transform, velocity) in ball_query.iter_mut() {
         transform.translation += velocity.0 * time.delta_seconds() * BALL_VELOCITY;
     }
@@ -170,7 +174,7 @@ fn move_ball(time: Res<Time>, mut ball_query: Query<(&mut Transform, &mut Veloci
 
 fn handle_collisions(
     mut param_set: ParamSet<(
-        Query<(&mut Transform, &mut Velocity), With<Ball>>,
+        Query<(&mut Transform, &mut BallDirection), With<Ball>>,
         Query<&Transform, With<Player>>,
         Query<&Transform, With<HitTile>>,
     )>,
@@ -179,19 +183,28 @@ fn handle_collisions(
     let player_position = player_transform.single().translation;
     let hit_tile_positions: Vec<Vec3> = param_set.p2().iter().map(|t| t.translation).collect();
 
-    for (transform, mut velocity) in param_set.p0().iter_mut() {
-        // Check collision with player
+    for (transform, mut ball_direction) in param_set.p0().iter_mut() {
         if check_collision(
             transform.translation.truncate(),
             BALL_SIZE,
             player_position.truncate(),
             TILE_SIZE,
         ) {
-            info!("Ball collided with player!");
-            velocity.0.y = 1.0;
+            // Move ball relative to hit intersection with player
+            let intersection_x = transform.translation.x;
+            let player_left = player_position.x - TILE_SIZE.x / 2.0;
+            let player_right = player_position.x + TILE_SIZE.x / 2.0;
+
+            let normalized_intersection =
+                (intersection_x - player_left) / (player_right - player_left) * 2.0 - 1.0;
+
+            ball_direction.0.y = 1.0;
+            ball_direction.0.x = normalized_intersection * MAX_BOUNCE_ANGLE;
+
+            info!("Player x = {}", player_position.x.to_string());
+            info!("Ball x = {}", transform.translation.x.to_string());
         }
 
-        // Check collision with hit tiles
         for hit_tile_position in &hit_tile_positions {
             if check_collision(
                 transform.translation.truncate(),
@@ -200,8 +213,8 @@ fn handle_collisions(
                 TILE_SIZE,
             ) {
                 info!("Ball collided with tile!");
-                velocity.0.y = -1.0;
-                break; // Handle one collision per frame for simplicity
+                ball_direction.0.y = -1.0;
+                break;
             }
         }
     }
