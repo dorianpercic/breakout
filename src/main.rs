@@ -43,6 +43,9 @@ struct WallHitEvent;
 struct CeilingHitEvent;
 
 #[derive(Event)]
+struct FloorHitEvent;
+
+#[derive(Event)]
 struct PlayerHitEvent {
     intersection_x: f32,
 }
@@ -73,6 +76,7 @@ fn main() {
         .add_event::<CeilingHitEvent>()
         .add_event::<PlayerHitEvent>()
         .add_event::<TileHitEvent>()
+        .add_event::<FloorHitEvent>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -84,6 +88,7 @@ fn main() {
                 handle_ceiling_hit_events,
                 handle_player_hit_events,
                 handle_tile_hit_events,
+                handle_floor_hit_events,
             ),
         )
         .run();
@@ -214,6 +219,7 @@ fn handle_collisions(
     )>,
     mut wall_hit_event_writer: EventWriter<WallHitEvent>,
     mut ceiling_hit_event_writer: EventWriter<CeilingHitEvent>,
+    mut floor_hit_event_writer: EventWriter<FloorHitEvent>,
     mut player_hit_event_writer: EventWriter<PlayerHitEvent>,
     mut tile_hit_event_writer: EventWriter<TileHitEvent>,
 ) {
@@ -229,6 +235,8 @@ fn handle_collisions(
         if ball_pos_transform.translation.y >= SCREEN_HEIGHT / 2.6 {
             ball_pos_transform.translation.y -= 2.0 * BALL_RADIUS;
             ceiling_hit_event_writer.send(CeilingHitEvent);
+        } else if ball_pos_transform.translation.y <= -SCREEN_HEIGHT / 2.6 {
+            floor_hit_event_writer.send(FloorHitEvent);
         }
 
         if ball_pos_transform.translation.x <= -SCREEN_WIDTH / 1.53 {
@@ -314,6 +322,21 @@ fn handle_ceiling_hit_events(
         info!("Ceiling collision");
         for mut move_direction in param_set.p1().iter_mut() {
             move_direction.0.y *= -1.0;
+        }
+    }
+}
+
+fn handle_floor_hit_events(
+    mut floor_hit_event_reader: EventReader<FloorHitEvent>,
+    mut param_set: ParamSet<(
+        Query<&mut Transform, With<Ball>>,
+        Query<&mut MoveDirection, With<Ball>>,
+    )>,
+) {
+    for _event in floor_hit_event_reader.read() {
+        info!("Floor collision");
+        for mut move_direction in param_set.p1().iter_mut() {
+            // One life lost
         }
     }
 }
