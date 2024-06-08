@@ -43,6 +43,9 @@ struct WallHitEvent;
 struct CeilingHitEvent;
 
 #[derive(Event)]
+struct FloorHitEvent;
+
+#[derive(Event)]
 struct PlayerHitEvent {
     intersection_x: f32,
 }
@@ -73,6 +76,7 @@ fn main() {
         .add_event::<CeilingHitEvent>()
         .add_event::<PlayerHitEvent>()
         .add_event::<TileHitEvent>()
+        .add_event::<FloorHitEvent>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -84,6 +88,7 @@ fn main() {
                 handle_ceiling_hit_events,
                 handle_player_hit_events,
                 handle_tile_hit_events,
+                handle_floor_hit_events,
             ),
         )
         .run();
@@ -214,10 +219,14 @@ fn handle_collisions(
     )>,
     mut wall_hit_event_writer: EventWriter<WallHitEvent>,
     mut ceiling_hit_event_writer: EventWriter<CeilingHitEvent>,
+    mut floor_hit_event_writer: EventWriter<FloorHitEvent>,
     mut player_hit_event_writer: EventWriter<PlayerHitEvent>,
     mut tile_hit_event_writer: EventWriter<TileHitEvent>,
 ) {
     let player_transform = param_set.p1();
+    if player_transform.iter().count() != 1 {
+        return;
+    }
     let player_position = player_transform.single().translation;
     let hit_tile_positions: Vec<(Entity, Vec3)> = param_set
         .p2()
@@ -229,6 +238,8 @@ fn handle_collisions(
         if ball_pos_transform.translation.y >= SCREEN_HEIGHT / 2.6 {
             ball_pos_transform.translation.y -= 2.0 * BALL_RADIUS;
             ceiling_hit_event_writer.send(CeilingHitEvent);
+        } else if ball_pos_transform.translation.y <= -SCREEN_HEIGHT / 2.6 {
+            floor_hit_event_writer.send(FloorHitEvent);
         }
 
         if ball_pos_transform.translation.x <= -SCREEN_WIDTH / 1.53 {
@@ -315,6 +326,35 @@ fn handle_ceiling_hit_events(
         for mut move_direction in param_set.p1().iter_mut() {
             move_direction.0.y *= -1.0;
         }
+    }
+}
+
+fn handle_floor_hit_events(
+    mut commands: Commands,
+    mut floor_hit_event_reader: EventReader<FloorHitEvent>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    player_query: Query<Entity, With<Player>>,
+    hit_tile_query: Query<Entity, With<HitTile>>,
+    ball_query: Query<Entity, With<Ball>>,
+) {
+    // Restart game
+    for _event in floor_hit_event_reader.read() {
+        info!("Floor collision");
+        for ent in player_query.iter() {
+            commands.entity(ent).despawn();
+        }
+        for ent in hit_tile_query.iter() {
+            commands.entity(ent).despawn();
+        }
+
+        for ent in ball_query.iter() {
+            commands.entity(ent).despawn();
+        }
+
+        spawn_ball(&mut commands, &mut meshes, &mut materials);
+        spawn_player(&mut commands, &mut meshes, &mut materials);
+        spawn_hit_tiles(&mut commands, &mut meshes, &mut materials);
     }
 }
 
