@@ -48,7 +48,9 @@ struct PlayerHitEvent {
 }
 
 #[derive(Event)]
-struct TileHitEvent;
+struct TileHitEvent {
+    tile_entity: Entity,
+}
 
 fn main() {
     App::new()
@@ -208,7 +210,7 @@ fn handle_collisions(
     mut param_set: ParamSet<(
         Query<&mut Transform, With<Ball>>,
         Query<&Transform, With<Player>>,
-        Query<&Transform, With<HitTile>>,
+        Query<(Entity, &Transform), With<HitTile>>,
     )>,
     mut wall_hit_event_writer: EventWriter<WallHitEvent>,
     mut ceiling_hit_event_writer: EventWriter<CeilingHitEvent>,
@@ -217,7 +219,11 @@ fn handle_collisions(
 ) {
     let player_transform = param_set.p1();
     let player_position = player_transform.single().translation;
-    let hit_tile_positions: Vec<Vec3> = param_set.p2().iter().map(|t| t.translation).collect();
+    let hit_tile_positions: Vec<(Entity, Vec3)> = param_set
+        .p2()
+        .iter()
+        .map(|(e, t)| (e, t.translation))
+        .collect();
 
     for mut ball_pos_transform in param_set.p0().iter_mut() {
         if ball_pos_transform.translation.y >= SCREEN_HEIGHT / 2.6 {
@@ -251,14 +257,16 @@ fn handle_collisions(
             });
         }
 
-        for hit_tile_position in &hit_tile_positions {
+        for (tile_entity, hit_tile_position) in &hit_tile_positions {
             if check_collision(
                 ball_pos_transform.translation.truncate(),
                 BALL_SIZE,
                 hit_tile_position.truncate(),
                 TILE_SIZE,
             ) {
-                tile_hit_event_writer.send(TileHitEvent);
+                tile_hit_event_writer.send(TileHitEvent {
+                    tile_entity: *tile_entity,
+                });
             }
         }
     }
@@ -311,13 +319,15 @@ fn handle_ceiling_hit_events(
 }
 
 fn handle_tile_hit_events(
+    mut commands: Commands,
     mut tile_hit_event_reader: EventReader<TileHitEvent>,
     mut param_set: ParamSet<(
         Query<&mut Transform, With<Ball>>,
         Query<&mut MoveDirection, With<Ball>>,
+        Query<&mut MoveDirection, With<Ball>>,
     )>,
 ) {
-    for _event in tile_hit_event_reader.read() {
+    for event in tile_hit_event_reader.read() {
         info!("Tile collision");
         for mut transform in param_set.p0().iter_mut() {
             transform.translation.y -= 2.0 * BALL_RADIUS;
@@ -325,6 +335,9 @@ fn handle_tile_hit_events(
         for mut move_direction in param_set.p1().iter_mut() {
             move_direction.0.y *= -1.0;
         }
+
+        // Despawn the tile that was hit
+        commands.entity(event.tile_entity).despawn();
     }
 }
 
