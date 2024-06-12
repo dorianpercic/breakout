@@ -224,6 +224,9 @@ fn handle_collisions(
     mut tile_hit_event_writer: EventWriter<TileHitEvent>,
 ) {
     let player_transform = param_set.p1();
+    if player_transform.iter().count() != 1 {
+        return;
+    }
     let player_position = player_transform.single().translation;
     let hit_tile_positions: Vec<(Entity, Vec3)> = param_set
         .p2()
@@ -327,17 +330,31 @@ fn handle_ceiling_hit_events(
 }
 
 fn handle_floor_hit_events(
+    mut commands: Commands,
     mut floor_hit_event_reader: EventReader<FloorHitEvent>,
-    mut param_set: ParamSet<(
-        Query<&mut Transform, With<Ball>>,
-        Query<&mut MoveDirection, With<Ball>>,
-    )>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    player_query: Query<Entity, With<Player>>,
+    hit_tile_query: Query<Entity, With<HitTile>>,
+    ball_query: Query<Entity, With<Ball>>,
 ) {
+    // Restart game
     for _event in floor_hit_event_reader.read() {
         info!("Floor collision");
-        for mut move_direction in param_set.p1().iter_mut() {
-            // One life lost
+        for ent in player_query.iter() {
+            commands.entity(ent).despawn();
         }
+        for ent in hit_tile_query.iter() {
+            commands.entity(ent).despawn();
+        }
+
+        for ent in ball_query.iter() {
+            commands.entity(ent).despawn();
+        }
+
+        spawn_ball(&mut commands, &mut meshes, &mut materials);
+        spawn_player(&mut commands, &mut meshes, &mut materials);
+        spawn_hit_tiles(&mut commands, &mut meshes, &mut materials);
     }
 }
 
